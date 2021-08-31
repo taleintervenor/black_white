@@ -4,8 +4,9 @@ import tkinter
 map_empty = 0
 map_point_black = 1
 map_point_white = 2
-map_line_x = 3
-map_line_y = 4
+map_point_fix = 3
+map_line_x = 4
+map_line_y = 5
 str_btn_draw = ['确定地图', '重设地图']
 str_btn_walk = ['确定起点', '结束行走']
 
@@ -13,7 +14,7 @@ str_btn_walk = ['确定起点', '结束行走']
 map_size = 3
 map_number: List[List[int]]
 map_number_record: List[List[int]]
-map_button: List[List[tkinter.Button]]
+map_button: List[List[tkinter.Button]] = []
 start_x, start_y = 0, 0
 player_x, player_y = -1, -1
 
@@ -30,28 +31,32 @@ def init_map(size: int) -> List[List[int]]:
     return matrix
 
 
-def clean_map_button(button_matrix: List[List[tkinter.Button]]):
-    for column in button_matrix:
-        for button in column:
-            button.destroy()
+def clean_map_button():
+    global map_button
+    for x in range(len(map_button)):
+        for y in range(len(map_button[x])):
+            map_button[x][y].destroy()
+            map_button[x][y] = None
+        map_button[x] = []
+    map_button = []
 
 
-def draw_map_button(size: int) -> List[List[tkinter.Button]]:
-    global frm_map, map_number
-    btn_matrix: List[List[tkinter.Button]] = []
-    for x in range(2 * size - 1):
-        btn_matrix.append([])
-        for y in range(2 * size - 1):
-            btn_new = tkinter.Button(frm_map, image=map_pattern[map_number[x][y]], bd=0, state=tkinter.NORMAL)
-            if map_number[x][y] == map_point_black or map_number[x][y] == map_point_white:
+def draw_map_button(map_num: List[List[int]], parent: tkinter.Frame):
+    global map_button
+    clean_map_button()
+    for x in range(len(map_num)):
+        map_button.append([])
+        for y in range(len(map_num)):
+            btn_new = tkinter.Button(parent, image=map_pattern[map_num[x][y]], bd=0, state=tkinter.NORMAL)
+            if x & 0x1 == 0x0 and y & 0x1 == 0x0:
                 btn_new.configure(command=lambda bx=x, by=y: on_click_point_edit(bx, by))
-            elif map_number[x][y] == map_line_x or map_number[x][y] == map_line_y:
+            elif x & 0x1 == 0x0 or y & 0x1 == 0x0:
                 btn_new.configure(command=lambda bx=x, by=y: on_click_line_edit(bx, by))
             else:
                 btn_new.configure(state=tkinter.DISABLED)
             btn_new.grid(row=y, column=x)
-            btn_matrix[x].append(btn_new)
-    return btn_matrix
+            map_button[x].append(btn_new)
+    return map_button
 
 
 def move_player(x, y, color='dodger blue'):
@@ -70,43 +75,81 @@ def record_insert(widget: tkinter.Text, msg: str):
     widget.configure(state=tkinter.DISABLED)
 
 
-def on_click_point_edit(bx: int, by: int):
+def no_route(x, y) -> bool:
+    if x < 0 or x >= len(map_number):
+        return True
+    if y < 0 or y >= len(map_number):
+        return True
+    return map_number[x][y] == map_empty
+
+
+def step_on_point(x, y):
     global map_number, map_button
-    map_number[bx][by] = map_point_black + map_point_white - map_number[bx][by]
-    map_button[bx][by].configure(image=map_pattern[map_number[bx][by]])
+    if map_number[x][y] == map_point_fix:
+        return
+    map_number[x][y] = map_point_white + map_point_black - map_number[x][y]
+    map_button[x][y].configure(image=map_pattern[map_number[x][y]])
 
 
-def on_click_line_edit(bx: int, by: int):
-    if map_number[bx][by] == map_empty:
-        if by & 0x1 == 0x1:
-            map_number[bx][by] = map_line_y
+def on_click_point_edit(x: int, y: int):
+    global map_number, map_button
+    map_number[x][y] = map_number[x][y] % 3 + 1  # loop from 1-3, also can transfer 0 to 1
+    map_button[x][y].configure(image=map_pattern[map_number[x][y]])
+
+
+def on_click_line_edit(x: int, y: int):
+    if y & 0x1 == 0x1:  # it's y-axis line
+        if map_number[x][y] == map_line_y:
+            map_number[x][y] = map_empty
+            # hide upper point if no route linked to it
+            if no_route(x - 1, y - 1) and no_route(x + 1, y - 1) and no_route(x, y - 2):
+                map_number[x][y - 1] = map_empty
+                map_button[x][y - 1].configure(image=map_pattern[map_empty])
+            # hide lower point if no route linked to it
+            if no_route(x - 1, y + 1) and no_route(x + 1, y + 1) and no_route(x, y + 2):
+                map_number[x][y + 1] = map_empty
+                map_button[x][y + 1].configure(image=map_pattern[map_empty])
         else:
-            map_number[bx][by] = map_line_x
-    else:
-        map_number[bx][by] = map_empty
-    map_button[bx][by].configure(image=map_pattern[map_number[bx][by]])
+            map_number[x][y] = map_line_y
+    else:  # it's x-axis line
+        if map_number[x][y] == map_line_x:
+            map_number[x][y] = map_empty
+            # hide left point if no route linked to it
+            if no_route(x - 1, y - 1) and no_route(x - 1, y + 1) and no_route(x - 2, y):
+                map_number[x - 1][y] = map_empty
+                map_button[x - 1][y].configure(image=map_pattern[map_empty])
+            # hide right point if no route linked to it
+            if no_route(x + 1, y - 1) and no_route(x + 1, y + 1) and no_route(x + 2, y):
+                map_number[x + 1][y] = map_empty
+                map_button[x + 1][y].configure(image=map_pattern[map_empty])
+        else:
+            map_number[x][y] = map_line_x
+    map_button[x][y].configure(image=map_pattern[map_number[x][y]])
 
 
-def on_click_point_start(bx: int, by: int):
-    move_player(bx, by, color='orange')
+def on_click_point_start(x: int, y: int):
+    if map_number[x][y] != map_empty:
+        move_player(x, y, color='orange')
 
 
-def on_click_point_walk(bx: int, by: int):
-    if bx - player_x == 2 and by == player_y and map_number[bx-1][by] != map_empty:  # move right
-        move_player(bx, by)
-        on_click_point_edit(bx, by)
+def on_click_point_walk(x: int, y: int):
+    if map_number[x][y] == map_empty:
+        return
+    if x - player_x == 2 and y == player_y and map_number[x - 1][y] != map_empty:  # move right
+        move_player(x, y)
+        step_on_point(x, y)
         record_insert(txt_record, '→ ')
-    elif bx - player_x == -2 and by == player_y and map_number[bx+1][by] != map_empty:  # move left
-        move_player(bx, by)
-        on_click_point_edit(bx, by)
+    elif x - player_x == -2 and y == player_y and map_number[x + 1][y] != map_empty:  # move left
+        move_player(x, y)
+        step_on_point(x, y)
         record_insert(txt_record, '← ')
-    elif by - player_y == 2 and bx == player_x and map_number[bx][by-1] != map_empty:  # move down
-        move_player(bx, by)
-        on_click_point_edit(bx, by)
+    elif y - player_y == 2 and x == player_x and map_number[x][y - 1] != map_empty:  # move down
+        move_player(x, y)
+        step_on_point(x, y)
         record_insert(txt_record, '↓ ')
-    elif by - player_y == -2 and bx == player_x and map_number[bx][by+1] != map_empty:  # move up
-        move_player(bx, by)
-        on_click_point_edit(bx, by)
+    elif y - player_y == -2 and x == player_x and map_number[x][y + 1] != map_empty:  # move up
+        move_player(x, y)
+        step_on_point(x, y)
         record_insert(txt_record, '↑ ')
 
 
@@ -118,19 +161,19 @@ def on_click_btn_draw():
         on_focusout_ety_size(tkinter.Event())
         btn_walk.configure(state=tkinter.NORMAL)
         # make all line unable to be clicked
-        for x in range(0, map_size*2-1, 2):
-            for y in range(1, map_size*2-1, 2):
+        for x in range(0, map_size * 2 - 1, 2):
+            for y in range(1, map_size * 2 - 1, 2):
                 map_button[x][y].configure(state=tkinter.DISABLED)
-        for x in range(1, map_size*2-1, 2):
-            for y in range(0, map_size*2-1, 2):
+        for x in range(1, map_size * 2 - 1, 2):
+            for y in range(0, map_size * 2 - 1, 2):
                 map_button[x][y].configure(state=tkinter.DISABLED)
         # switch all points' onclick callback for setting start point
-        for x in range(0, map_size*2-1, 2):
-            for y in range(0, map_size*2-1, 2):
+        for x in range(0, map_size * 2 - 1, 2):
+            for y in range(0, map_size * 2 - 1, 2):
                 map_button[x][y].configure(command=lambda bx=x, by=y: on_click_point_start(bx, by))
         # save the init state of map
         map_number_record = []
-        for x in range(map_size*2-1):
+        for x in range(map_size * 2 - 1):
             map_number_record.append(map_number[x].copy())
         on_click_point_start(0, 0)
     else:  # re-edit the map
@@ -138,15 +181,15 @@ def on_click_btn_draw():
         ety_size.configure(state=tkinter.NORMAL)
         btn_walk.configure(text=str_btn_walk[0], state=tkinter.DISABLED)
         # make all line able to be clicked
-        for x in range(0, map_size*2-1, 2):
-            for y in range(1, map_size*2-1, 2):
+        for x in range(0, map_size * 2 - 1, 2):
+            for y in range(1, map_size * 2 - 1, 2):
                 map_button[x][y].configure(state=tkinter.NORMAL)
-        for x in range(1, map_size*2-1, 2):
-            for y in range(0, map_size*2-1, 2):
+        for x in range(1, map_size * 2 - 1, 2):
+            for y in range(0, map_size * 2 - 1, 2):
                 map_button[x][y].configure(state=tkinter.NORMAL)
         # switch all points' onclick callback for edit map
-        for x in range(0, map_size*2-1, 2):
-            for y in range(0, map_size*2-1, 2):
+        for x in range(0, map_size * 2 - 1, 2):
+            for y in range(0, map_size * 2 - 1, 2):
                 map_button[x][y].configure(command=lambda bx=x, by=y: on_click_point_edit(bx, by))
         move_player(-1, -1)
 
@@ -167,7 +210,7 @@ def on_click_btn_walk():
         record_insert(txt_record, '终点\n')
         # reset map state to init record
         map_number = map_number_record
-        map_button = draw_map_button(map_size)
+        draw_map_button(map_number, frm_map)
         # switch all points' onclick callback for setting start point
         for x in range(0, map_size * 2 - 1, 2):
             for y in range(0, map_size * 2 - 1, 2):
@@ -176,7 +219,7 @@ def on_click_btn_walk():
 
 
 def on_focusout_ety_size(event):
-    global map_size, map_number, map_button
+    global map_size, map_number, map_button, frm_map
     # check user input size is valid
     valid = False
     new_size = 0
@@ -194,11 +237,11 @@ def on_focusout_ety_size(event):
     # redraw the whole map
     map_size = new_size
     map_number = init_map(map_size)
-    clean_map_button(map_button)
-    map_button = draw_map_button(map_size)
+    draw_map_button(map_number, frm_map)
 
 
 main_win = tkinter.Tk()
+main_win.title('黑白格')
 
 frm_top = tkinter.Frame(main_win)
 lbl_size = tkinter.Label(frm_top, text='地图尺寸')
@@ -219,10 +262,11 @@ frm_map = tkinter.Frame(main_win)
 map_pattern = [tkinter.PhotoImage(file='img/map_empty.png'),
                tkinter.PhotoImage(file='img/point_black.png'),
                tkinter.PhotoImage(file='img/point_white.png'),
+               tkinter.PhotoImage(file='img/point_fix.png'),
                tkinter.PhotoImage(file='img/route_x.png'),
                tkinter.PhotoImage(file='img/route_y.png')]
 map_number = init_map(map_size)
-map_button = draw_map_button(map_size)
+draw_map_button(map_number, frm_map)
 frm_map.pack(side=tkinter.TOP)
 
 frm_bottom = tkinter.Frame(main_win)
